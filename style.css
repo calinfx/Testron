@@ -1,0 +1,13 @@
+:root {
+    /* "Night Vision" Theme - Change these hex codes to change the vibe */
+    --bg-color: #000000;
+    --grid-color: #004400;
+    --grid-lines: #002200;
+    --ui-accent: #00ff00;
+    --cube-color: #00ff00;
+}
+
+body { margin: 0; background: var(--bg-color); color: var(--ui-accent); font-family: monospace; overflow: hidden; }
+#ui { position: absolute; bottom: 20px; left: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; z-index: 10; width: calc(100% - 20px); }
+button { background: #111; color: var(--ui-accent); border: 1px solid var(--ui-accent); padding: 12px; font-weight: bold; font-size: 11px; text-transform: uppercase; }
+#status { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); border: 1px solid var(--ui-accent); padding: 5px; font-size: 10px; z-index: 11; }
