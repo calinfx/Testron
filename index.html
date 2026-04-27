@@ -4,23 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="style.css">
-    <title>Camp Mapper v3 - Movement Enabled</title>
+    <title>Camp Mapper v0.02</title>
 </head>
 <body>
-    <div id="status">MOVE: DRAG TOP HALF | LOOK: DRAG BOTTOM HALF</div>
+    <div id="status">
+        <span style="color: #555;">v0.02</span> | 
+        <span id="stats-content">INITIALIZING...</span>
+    </div>
+
     <div id="ui">
         <button onclick="addCube()">+ NEW CUBE</button>
         <button onclick="cycleAxis()">AXIS (X/Y/Z)</button>
         <button onclick="resize(0.2)">GROW (+)</button>
         <button onclick="resize(-0.2)">SHRINK (-)</button>
         <button onclick="rotateObj()">ROTATE 45</button>
-        <button onclick="deleteObj()">DELETE ACTIVE</button>
+        <button onclick="deleteObj()">DELETE</button>
     </div>
 
     <script type="module">
         import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
 
-        // Get colors from CSS Painter Palette
         const style = getComputedStyle(document.documentElement);
         const getColor = (name) => new THREE.Color(style.getPropertyValue(name).trim());
 
@@ -28,6 +31,9 @@
         scene.background = getColor('--bg-color');
         
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        // FIX: Start at eye level (1.6m) instead of in the dirt
+        camera.position.set(0, 1.6, 5); 
+
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
@@ -36,42 +42,47 @@
         scene.add(grid);
 
         let activeObj = null, axes = ['all', 'x', 'y', 'z'], axisIdx = 0;
-        let moveForward = false, moveBackward = false;
-        let lat = 0, lon = 0, lastX, lastY;
+        let lat = 0, lon = 0, lastX, lastY, lastDist = 0;
 
-        // --- MOVEMENT LOGIC ---
-        window.addEventListener('touchstart', e => {
-            const y = e.touches[0].pageY;
-            if (y < window.innerHeight / 2) moveForward = true; // Touch top half to walk
-        });
-        window.addEventListener('touchend', () => { moveForward = false; lastX = null; lastY = null; });
-
+        // --- IMPROVED MOBILE CONTROLS ---
         window.addEventListener('touchmove', e => {
-            const touch = e.touches[0];
-            if (touch.pageY > window.innerHeight / 2) { // Drag bottom half to look
-                let dx = touch.pageX - (lastX || touch.pageX);
-                let dy = touch.pageY - (lastY || touch.pageY);
+            if (e.touches.length === 1) {
+                // LOOK AROUND (One finger)
+                let dx = e.touches[0].pageX - (lastX || e.touches[0].pageX);
+                let dy = e.touches[0].pageY - (lastY || e.touches[0].pageY);
                 lon += dx * 0.2; lat -= dy * 0.2;
                 lat = Math.max(-85, Math.min(85, lat));
-                lastX = touch.pageX; lastY = touch.pageY;
+                lastX = e.touches[0].pageX; lastY = e.touches[0].pageY;
+            } else if (e.touches.length === 2) {
+                // MOVE IN/OUT (Two finger pinch)
+                let d = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                if (lastDist > 0) {
+                    let move = (d - lastDist) * 0.05;
+                    camera.position.x -= Math.sin(THREE.MathUtils.degToRad(lon)) * move;
+                    camera.position.z -= Math.cos(THREE.MathUtils.degToRad(lon)) * move;
+                }
+                lastDist = d;
             }
-        });
+        }, { passive: false });
+
+        window.addEventListener('touchend', () => { lastX = null; lastY = null; lastDist = 0; });
 
         window.addCube = () => {
             const geo = new THREE.BoxGeometry(1, 1, 1);
             const mat = new THREE.MeshBasicMaterial({ color: getColor('--cube-color'), wireframe: true });
             const cube = new THREE.Mesh(geo, mat);
-            const dist = 4;
+            // Spawn cube on the ground in front of you
+            const dist = 3;
             cube.position.set(
                 camera.position.x - Math.sin(THREE.MathUtils.degToRad(lon)) * dist,
-                0.5,
+                0.5, 
                 camera.position.z - Math.cos(THREE.MathUtils.degToRad(lon)) * dist
             );
             scene.add(cube);
             activeObj = cube;
         };
 
-        window.cycleAxis = () => { axisIdx = (axisIdx + 1) % axes.length; updateStatus(); };
+        window.cycleAxis = () => { axisIdx = (axisIdx + 1) % axes.length; };
         window.resize = (v) => { 
             if (!activeObj) return;
             const a = axes[axisIdx];
@@ -80,21 +91,10 @@
         window.rotateObj = () => { if(activeObj) activeObj.rotation.y += Math.PI/4; };
         window.deleteObj = () => { if(activeObj) { scene.remove(activeObj); activeObj = null; } };
 
-        function updateStatus() {
-            document.getElementById('status').innerText = `AXIS: ${axes[axisIdx].toUpperCase()} | POSITION: ${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)}`;
-        }
-
         function animate() {
             requestAnimationFrame(animate);
-            // Rotate camera
             camera.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(lat), THREE.MathUtils.degToRad(lon), 0, 'YXZ'));
-            
-            // Move camera forward if touching top
-            if (moveForward) {
-                camera.position.x -= Math.sin(THREE.MathUtils.degToRad(lon)) * 0.1;
-                camera.position.z -= Math.cos(THREE.MathUtils.degToRad(lon)) * 0.1;
-                updateStatus();
-            }
+            document.getElementById('stats-content').innerText = `AXIS: ${axes[axisIdx].toUpperCase()} | POS: ${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)}`;
             renderer.render(scene, camera);
         }
         animate();
