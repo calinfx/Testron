@@ -3,89 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Off-Grid 3D Mapper</title>
-    <style>
-        body { margin: 0; background: #050505; color: #0f0; font-family: monospace; overflow: hidden; }
-        #ui { position: absolute; bottom: 10px; left: 10px; display: grid; gap: 5px; z-index: 10; }
-        button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 10px; cursor: pointer; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 1px solid #0f0; transform: translate(-50%, -50%); pointer-events: none; }
-    </style>
+    <link rel="stylesheet" href="style.css">
+    <title>Camp Mapper v3 - Movement Enabled</title>
 </head>
 <body>
-    <div id="crosshair"></div>
+    <div id="status">MOVE: DRAG TOP HALF | LOOK: DRAG BOTTOM HALF</div>
     <div id="ui">
-        <button onclick="addPrimitive()">+ PLACE CUBE</button>
-        <button onclick="transformActive('rotate')">ROTATE (3-AXIS)</button>
-        <button onclick="transformActive('scale')">RESIZE (ALL)</button>
-        <button onclick="addLabel()">+ LABEL HERE</button>
+        <button onclick="addCube()">+ NEW CUBE</button>
+        <button onclick="cycleAxis()">AXIS (X/Y/Z)</button>
+        <button onclick="resize(0.2)">GROW (+)</button>
+        <button onclick="resize(-0.2)">SHRINK (-)</button>
+        <button onclick="rotateObj()">ROTATE 45</button>
+        <button onclick="deleteObj()">DELETE ACTIVE</button>
     </div>
 
     <script type="module">
         import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
 
+        // Get colors from CSS Painter Palette
+        const style = getComputedStyle(document.documentElement);
+        const getColor = (name) => new THREE.Color(style.getPropertyValue(name).trim());
+
         const scene = new THREE.Scene();
-        scene.fog = new THREE.Fog(0x050505, 1, 15); // Dark, foggy "night"
+        scene.background = getColor('--bg-color');
         
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // Ground Grid
-        const grid = new THREE.GridHelper(20, 20, 0x004400, 0x002200);
+        const grid = new THREE.GridHelper(100, 100, getColor('--grid-color'), getColor('--grid-lines'));
         scene.add(grid);
 
-        // Lighting
-        const flashlight = new THREE.SpotLight(0xffffff, 1.5, 15, Math.PI / 6);
-        camera.add(flashlight);
-        camera.add(flashlight.target);
-        flashlight.target.position.set(0, 0, -1);
-        scene.add(camera);
+        let activeObj = null, axes = ['all', 'x', 'y', 'z'], axisIdx = 0;
+        let moveForward = false, moveBackward = false;
+        let lat = 0, lon = 0, lastX, lastY;
 
-        let activeObject = null;
-        let lastTouchX = 0;
+        // --- MOVEMENT LOGIC ---
+        window.addEventListener('touchstart', e => {
+            const y = e.touches[0].pageY;
+            if (y < window.innerHeight / 2) moveForward = true; // Touch top half to walk
+        });
+        window.addEventListener('touchend', () => { moveForward = false; lastX = null; lastY = null; });
 
-        // Basic First Person View Control (Mobile Drag)
-        window.addEventListener('touchmove', (e) => {
+        window.addEventListener('touchmove', e => {
             const touch = e.touches[0];
-            const deltaX = touch.pageX - lastTouchX;
-            camera.rotation.y -= deltaX * 0.005;
-            lastTouchX = touch.pageX;
+            if (touch.pageY > window.innerHeight / 2) { // Drag bottom half to look
+                let dx = touch.pageX - (lastX || touch.pageX);
+                let dy = touch.pageY - (lastY || touch.pageY);
+                lon += dx * 0.2; lat -= dy * 0.2;
+                lat = Math.max(-85, Math.min(85, lat));
+                lastX = touch.pageX; lastY = touch.pageY;
+            }
         });
 
-        window.addPrimitive = () => {
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshPhongMaterial({ color: 0x00ff00, wireframe: true });
-            const cube = new THREE.Mesh(geometry, material);
-            
-            // Place in front of camera
-            const vector = new THREE.Vector3(0, 0, -3);
-            vector.applyQuaternion(camera.quaternion);
-            cube.position.copy(camera.position).add(vector);
-            
+        window.addCube = () => {
+            const geo = new THREE.BoxGeometry(1, 1, 1);
+            const mat = new THREE.MeshBasicMaterial({ color: getColor('--cube-color'), wireframe: true });
+            const cube = new THREE.Mesh(geo, mat);
+            const dist = 4;
+            cube.position.set(
+                camera.position.x - Math.sin(THREE.MathUtils.degToRad(lon)) * dist,
+                0.5,
+                camera.position.z - Math.cos(THREE.MathUtils.degToRad(lon)) * dist
+            );
             scene.add(cube);
-            activeObject = cube;
+            activeObj = cube;
         };
 
-        window.transformActive = (mode) => {
-            if (!activeObject) return;
-            if (mode === 'rotate') {
-                activeObject.rotation.x += Math.PI / 4;
-                activeObject.rotation.y += Math.PI / 4;
-            } else if (mode === 'scale') {
-                activeObject.scale.multiplyScalar(1.2);
-            }
+        window.cycleAxis = () => { axisIdx = (axisIdx + 1) % axes.length; updateStatus(); };
+        window.resize = (v) => { 
+            if (!activeObj) return;
+            const a = axes[axisIdx];
+            if (a === 'all') activeObj.scale.addScalar(v); else activeObj.scale[a] += v;
         };
+        window.rotateObj = () => { if(activeObj) activeObj.rotation.y += Math.PI/4; };
+        window.deleteObj = () => { if(activeObj) { scene.remove(activeObj); activeObj = null; } };
 
-        window.addLabel = () => {
-            const text = prompt("Enter Label Name:");
-            if (!text) return;
-            // Technical note: simplified label as a sprite for performance
-            console.log(`Label "${text}" anchored at camera position.`);
-        };
+        function updateStatus() {
+            document.getElementById('status').innerText = `AXIS: ${axes[axisIdx].toUpperCase()} | POSITION: ${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)}`;
+        }
 
         function animate() {
             requestAnimationFrame(animate);
+            // Rotate camera
+            camera.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(lat), THREE.MathUtils.degToRad(lon), 0, 'YXZ'));
+            
+            // Move camera forward if touching top
+            if (moveForward) {
+                camera.position.x -= Math.sin(THREE.MathUtils.degToRad(lon)) * 0.1;
+                camera.position.z -= Math.cos(THREE.MathUtils.degToRad(lon)) * 0.1;
+                updateStatus();
+            }
             renderer.render(scene, camera);
         }
         animate();
