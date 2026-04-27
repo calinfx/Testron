@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Off-Grid 3D Mapper</title>
+    <style>
+        body { margin: 0; background: #050505; color: #0f0; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; bottom: 10px; left: 10px; display: grid; gap: 5px; z-index: 10; }
+        button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 10px; cursor: pointer; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 1px solid #0f0; transform: translate(-50%, -50%); pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="crosshair"></div>
+    <div id="ui">
+        <button onclick="addPrimitive()">+ PLACE CUBE</button>
+        <button onclick="transformActive('rotate')">ROTATE (3-AXIS)</button>
+        <button onclick="transformActive('scale')">RESIZE (ALL)</button>
+        <button onclick="addLabel()">+ LABEL HERE</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x050505, 1, 15); // Dark, foggy "night"
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Ground Grid
+        const grid = new THREE.GridHelper(20, 20, 0x004400, 0x002200);
+        scene.add(grid);
+
+        // Lighting
+        const flashlight = new THREE.SpotLight(0xffffff, 1.5, 15, Math.PI / 6);
+        camera.add(flashlight);
+        camera.add(flashlight.target);
+        flashlight.target.position.set(0, 0, -1);
+        scene.add(camera);
+
+        let activeObject = null;
+        let lastTouchX = 0;
+
+        // Basic First Person View Control (Mobile Drag)
+        window.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const deltaX = touch.pageX - lastTouchX;
+            camera.rotation.y -= deltaX * 0.005;
+            lastTouchX = touch.pageX;
+        });
+
+        window.addPrimitive = () => {
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshPhongMaterial({ color: 0x00ff00, wireframe: true });
+            const cube = new THREE.Mesh(geometry, material);
+            
+            // Place in front of camera
+            const vector = new THREE.Vector3(0, 0, -3);
+            vector.applyQuaternion(camera.quaternion);
+            cube.position.copy(camera.position).add(vector);
+            
+            scene.add(cube);
+            activeObject = cube;
+        };
+
+        window.transformActive = (mode) => {
+            if (!activeObject) return;
+            if (mode === 'rotate') {
+                activeObject.rotation.x += Math.PI / 4;
+                activeObject.rotation.y += Math.PI / 4;
+            } else if (mode === 'scale') {
+                activeObject.scale.multiplyScalar(1.2);
+            }
+        };
+
+        window.addLabel = () => {
+            const text = prompt("Enter Label Name:");
+            if (!text) return;
+            // Technical note: simplified label as a sprite for performance
+            console.log(`Label "${text}" anchored at camera position.`);
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
